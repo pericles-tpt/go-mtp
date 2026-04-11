@@ -1,4 +1,4 @@
-package main
+package gomtp
 
 // #cgo pkg-config: libmtp
 // #include <libmtp.h>

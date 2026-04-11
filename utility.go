@@ -1,4 +1,4 @@
-package main
+package gomtp
 
 import "fmt"
 
