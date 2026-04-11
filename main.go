@@ -7,64 +7,134 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"time"
 	"unsafe"
 )
 
 type RawDevice C.LIBMTP_raw_device_t
 type MTPDevice C.LIBMTP_mtpdevice_t
-type File C.LIBMTP_file_t
 
-type RawDeviceList []*RawDevice
+type File struct {
+	ItemId    uint32
+	ParentId  uint32
+	StorageId uint32
 
-func ReleaseDevice(m *MTPDevice) {
-	C.LIBMTP_Release_Device((*C.LIBMTP_mtpdevice_t)(m))
+	Filename         string
+	Filesize         uint64
+	ModificationDate time.Time
+
+	// TODO: Implement go enum for FileType
+	FileType C.LIBMTP_filetype_t
 }
 
-func GetRawDevices() (RawDeviceList, error) {
-	var devs *C.LIBMTP_raw_device_t
-	var numDevs C.int
-	r := C.LIBMTP_Detect_Raw_Devices(&devs, &numDevs)
-	if r != 0 {
-		fmt.Println("GetRawDevices might be an error?: ", r)
+type DeviceCapability C.LIBMTP_devicecap_t
+
+var (
+	GetPartialObject  DeviceCapability = C.LIBMTP_DEVICECAP_GetPartialObject
+	SendPartialObject DeviceCapability = C.LIBMTP_DEVICECAP_SendPartialObject
+	EditObject        DeviceCapability = C.LIBMTP_DEVICECAP_EditObjects
+	MoveObject        DeviceCapability = C.LIBMTP_DEVICECAP_MoveObject
+	CopyObject        DeviceCapability = C.LIBMTP_DEVICECAP_CopyObject
+)
+
+// SECTION: GET / OPEN DEVICES
+
+// GetRawDevices, gets a list of all RawDevice's connected to the host
+func GetRawDevices() ([]*RawDevice, error) {
+	var (
+		rdl []*RawDevice
+
+		devs    *C.LIBMTP_raw_device_t
+		numDevs C.int
+	)
+	errNo := C.LIBMTP_Detect_Raw_Devices(&devs, &numDevs)
+	if errNo != 0 {
+		return rdl, fmt.Errorf("failed got error code: %d, maybe no MTP devices detected", errNo)
 	}
 
 	slice := unsafe.Slice(&devs, int(numDevs))
-	rdl := make(RawDeviceList, numDevs)
+	rdl = make([]*RawDevice, numDevs)
 	for i, d := range slice {
-		var nd *RawDevice = nil
-		if d != nil {
-			nd = (*RawDevice)(d)
-		}
-		rdl[i] = nd
+		rdl[i] = (*RawDevice)(d)
 	}
 	return rdl, nil
 }
 
-// TODO:
-// func FreeRawDevices(dl RawDeviceList) {
-// 	C.free(dl)
-// }
-// TODO: Release Device
-
+// OpenRawDevice, opens a raw device as an `MTPDevice`
+//
+// NOTE: It's the callers responsibility to ensure `ReleaseDevice` is called for each `OpenRawDevice`
 func OpenRawDevice(d *RawDevice) *MTPDevice {
-	fmt.Println("d: ", d)
 	mtpDevice := C.LIBMTP_Open_Raw_Device_Uncached((*C.LIBMTP_raw_device_t)(d))
-	fmt.Println("mtp device: ", mtpDevice)
 	return (*MTPDevice)(mtpDevice)
 }
 
-func GetStorage(md *MTPDevice) {
-	// 0 -> not sorted, maybe add sorting in future
-	err := C.LIBMTP_Get_Storage((*C.LIBMTP_mtpdevice_t)(md), 0)
-	// TODO: Handle error
-	if err != 0 {
-		fmt.Println("Maybe error?: ", err)
-	}
+// ReleaseDevice, releases an opened mtp device
+func ReleaseDevice(m *MTPDevice) {
+	C.LIBMTP_Release_Device((*C.LIBMTP_mtpdevice_t)(m))
 }
 
-func GetFilesAndFolders(md *MTPDevice, storage, parent uint32) ([]*File, error) {
+// GetStorage, updates the storage id's on a device, creates a linked list of them and puts the head into `MTPDevice`
+func GetStorage(md *MTPDevice) error {
+	// TODO: Last param is to specify sorting, maybe make it configurable in future?
+	errNo := C.LIBMTP_Get_Storage((*C.LIBMTP_mtpdevice_t)(md), 0)
+	if errNo != 0 {
+		return fmt.Errorf("failed got error code: %d, battery level likely unsupported", errNo)
+	}
+	return nil
+}
+
+// SECTION: Get device information
+
+func (m *MTPDevice) GetSerialNumber() string {
+	s := C.LIBMTP_Get_Serialnumber((*C.LIBMTP_mtpdevice_t)(m))
+	return C.GoString(s)
+}
+
+func (m *MTPDevice) GetManufacturerName() string {
+	s := C.LIBMTP_Get_Manufacturername((*C.LIBMTP_mtpdevice_t)(m))
+	return C.GoString(s)
+}
+
+func (m *MTPDevice) GetModelName() string {
+	s := C.LIBMTP_Get_Modelname((*C.LIBMTP_mtpdevice_t)(m))
+	return C.GoString(s)
+}
+
+func (m *MTPDevice) GetDeviceVersion() string {
+	s := C.LIBMTP_Get_Deviceversion((*C.LIBMTP_mtpdevice_t)(m))
+	return C.GoString(s)
+}
+
+func (m *MTPDevice) GetFriendlyName() string {
+	s := C.LIBMTP_Get_Friendlyname((*C.LIBMTP_mtpdevice_t)(m))
+	return C.GoString(s)
+}
+
+// GetBatteryLevel, returns that `max` and `curr` battery level (if supported)
+func (m *MTPDevice) GetBatteryLevel() (uint8, uint8, error) {
 	var (
-		ret = []*File{}
+		max  = C.uint8_t(0)
+		curr = C.uint8_t(0)
+	)
+	errNo := C.LIBMTP_Get_Batterylevel((*C.LIBMTP_mtpdevice_t)(m), &max, &curr)
+	if errNo != 0 {
+		return 0, 0, fmt.Errorf("failed got error code: %d, battery level likely unsupported", errNo)
+	}
+	return uint8(max), uint8(curr), nil
+}
+
+// CheckCapability, checks if the device is capable of a `DeviceCapability`
+func (m *MTPDevice) CheckCapability(cap DeviceCapability) bool {
+	status := C.LIBMTP_Check_Capability((*C.LIBMTP_mtpdevice_t)(m), (C.LIBMTP_devicecap_t)(cap))
+	return status != 0
+}
+
+// SECTION: File and folder access
+
+// GetFilesAndFolders, gets a list of files and folders from `storage` and `parent` (folder) ids
+func GetFilesAndFolders(md *MTPDevice, storage, parent uint32) ([]File, error) {
+	var (
+		ret = []File{}
 	)
 	if md == nil {
 		return ret, errors.New("nil device provided")
@@ -72,105 +142,42 @@ func GetFilesAndFolders(md *MTPDevice, storage, parent uint32) ([]*File, error) 
 
 	fl := C.LIBMTP_Get_Files_And_Folders((*C.LIBMTP_mtpdevice_t)(md), C.uint32_t(storage), C.uint32_t(parent))
 	if fl == nil {
-		return ret, errors.New("no files found")
+		return ret, errors.New("no files or folders found")
 	}
-	defer C.LIBMTP_destroy_file_t(fl)
 
 	for p := fl; p != nil; p = p.next {
-		ret = append(ret, (*File)(p))
+		gf := libmtpToGoFileStruct(p)
+		ret = append(ret, gf)
+		C.LIBMTP_destroy_file_t(p)
 	}
 	return ret, nil
 }
 
-func (m *MTPDevice) GetSerialNumber() string {
-	sno := C.LIBMTP_Get_Serialnumber((*C.LIBMTP_mtpdevice_t)(m))
-	return C.GoString(sno)
-}
+func libmtpToGoFileStruct(libmtpFile *C.LIBMTP_file_t) File {
+	return File{
+		ItemId:    uint32(libmtpFile.item_id),
+		ParentId:  uint32(libmtpFile.parent_id),
+		StorageId: uint32(libmtpFile.storage_id),
 
-func (m *MTPDevice) GetManufacturerName() string {
-	sno := C.LIBMTP_Get_Manufacturername((*C.LIBMTP_mtpdevice_t)(m))
-	return C.GoString(sno)
-}
+		Filename:         C.GoString(libmtpFile.filename),
+		Filesize:         uint64(libmtpFile.filesize),
+		ModificationDate: time.Unix(int64(libmtpFile.modificationdate), 0),
 
-func (m *MTPDevice) GetModelName() string {
-	sno := C.LIBMTP_Get_Modelname((*C.LIBMTP_mtpdevice_t)(m))
-	return C.GoString(sno)
-}
-
-func (m *MTPDevice) GetDeviceVersion() string {
-	sno := C.LIBMTP_Get_Deviceversion((*C.LIBMTP_mtpdevice_t)(m))
-	return C.GoString(sno)
-}
-
-func (m *MTPDevice) GetFriendlyName() string {
-	sno := C.LIBMTP_Get_Friendlyname((*C.LIBMTP_mtpdevice_t)(m))
-	return C.GoString(sno)
-}
-
-func (m *MTPDevice) GetBatteryLevel() (uint8, uint8, error) {
-	var (
-		max  = C.uint8_t(0)
-		curr = C.uint8_t(0)
-	)
-	errno := C.LIBMTP_Get_Batterylevel((*C.LIBMTP_mtpdevice_t)(m), &max, &curr)
-	if errno != 0 {
-		return 0, 0, fmt.Errorf("failed got error code: %d, battery level likely unsupported", errno)
+		FileType: libmtpFile.filetype,
 	}
-	return uint8(max), uint8(curr), nil
 }
 
-// GetDeviceBySerialNumber, returns a CACHED MTPDevice
-func GetDeviceBySerialNumber(sno string) *MTPDevice {
-	cstr := C.CString(sno)
-	dev := C.LIBMTP_Get_Device_By_SerialNumber(cstr)
-	defer C.free(unsafe.Pointer(cstr))
-	return (*MTPDevice)(dev)
-}
-
-func main() {
-	dl, err := GetRawDevices()
-	if err != nil {
-		panic(err)
+// GetFileToFile, copies a file off the device to a local file at `path`
+func (m *MTPDevice) GetFileToFile(id uint32, path string) error {
+	// TODO: Maybe add support for last two argument in the future:
+	// - "callback" (progress indicator function)
+	// - "data" (user-defined pointer to pass data to the progress updated)
+	// SOURCE: https://github.com/libmtp/libmtp/blob/41786891edcb4b57cf22f2721b164e1416d1feb5/src/libmtp.c#L5331
+	cPath := C.CString(path)
+	errNo := C.LIBMTP_Get_File_To_File((*C.LIBMTP_mtpdevice_t)(m), C.uint32_t(id), cPath, nil, nil)
+	C.free(unsafe.Pointer(cPath))
+	if errNo != 0 {
+		return fmt.Errorf("failed got error code: %d", errNo)
 	}
-	// defer FreeRawDevices(dl)
-
-	if len(dl) > 0 {
-		mtpDevice := OpenRawDevice(dl[0])
-		fmt.Println("mtp device: ", mtpDevice)
-		if mtpDevice == nil {
-			return
-		}
-		defer ReleaseDevice(mtpDevice)
-
-		sno := mtpDevice.GetSerialNumber()
-		fmt.Println("Sno: ", sno)
-		fmt.Println("Manu: ", mtpDevice.GetManufacturerName())
-		fmt.Println("ModName: ", mtpDevice.GetModelName())
-		fmt.Println("DevVer: ", mtpDevice.GetDeviceVersion())
-		fmt.Println("Friendly: ", mtpDevice.GetFriendlyName())
-		max, curr, err := mtpDevice.GetBatteryLevel()
-		if err != nil {
-			fmt.Println("Failed to get battery level: ", err)
-		}
-		fmt.Println(curr, max)
-
-		// mtpDevice = GetDeviceBySerialNumber(sno)
-		// defer ReleaseDevice(mtpDevice)
-		// fmt.Println("Should be the same as the first mtp device: ", mtpDevice)
-
-		// GetStorage(mtpDevice)
-		// sid := uint32(mtpDevice.storage.id)
-
-		// files, err := GetFilesAndFolders(mtpDevice, sid, 0)
-		// if err != nil {
-		// 	panic(err)
-		// }
-		// fmt.Println("Files are: ", files)
-
-		// for _, f := range files {
-		// 	s := C.GoString(f.filename)
-		// 	fmt.Println("fn: ", s)
-		// }
-
-	}
+	return nil
 }

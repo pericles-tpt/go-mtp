@@ -20,7 +20,7 @@ But, if you want to implement other bindings I'll be happy to review your MR.
 I've setup some initial bindings and a "test" scenario in my `main()` function. It's all a bit messy at the moment but it's functional on my Fedora desktop, connecting to my Garmin watch and listing the files on it.
 
 ### TODO
-- Move bindings into separate packages
+- Move bindings into separate packages [WON'T DO]
 - Create some tests
-- Check for any missing "cleanup", "release", "free" calls
-- Improve error handling
+- Check for any missing "cleanup", "release", "free" calls [DONE]
+- Improve error handling [DONE]
