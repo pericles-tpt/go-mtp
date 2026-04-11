@@ -78,7 +78,7 @@ func GetStorage(md *MTPDevice) error {
 	// TODO: Last param is to specify sorting, maybe make it configurable in future?
 	errNo := C.LIBMTP_Get_Storage((*C.LIBMTP_mtpdevice_t)(md), 0)
 	if errNo != 0 {
-		return fmt.Errorf("failed got error code: %d, battery level likely unsupported", errNo)
+		return fmt.Errorf("failed got error code: %d", errNo)
 	}
 	return nil
 }
