@@ -121,25 +121,6 @@ func libmtpToGoMTPDeviceStruct(m *C.LIBMTP_mtpdevice_t) MTPDevice {
 		Cached: (int)(m.cached),
 	}
 
-	var numStorage int
-	for f := m.storage; f != nil; f = f.next {
-		numStorage++
-	}
-	dev.Storage = make([]Storage, 0, numStorage)
-	for f := m.storage; f != nil; f = f.next {
-		dev.Storage = append(dev.Storage, Storage{
-			Id:                 (uint32)(f.id),
-			StorageType:        (uint16)(f.StorageType),
-			FilesystemType:     (uint16)(f.FilesystemType),
-			AccessCapability:   (uint16)(f.FreeSpaceInBytes),
-			MaxCapacity:        (uint64)(f.MaxCapacity),
-			FreeSpaceInBytes:   (uint64)(f.FreeSpaceInBytes),
-			FreeSpaceInObjects: (uint64)(f.next.FreeSpaceInObjects),
-			StorageDescription: C.GoString(f.StorageDescription),
-			VolumeIdentifier:   C.GoString(f.VolumeIdentifier),
-		})
-	}
-
 	return dev
 }
 
@@ -155,6 +136,26 @@ func (m *MTPDevice) GetStorage() error {
 	if errNo != 0 {
 		return fmt.Errorf("failed got error code: %d", errNo)
 	}
+
+	var numStorage int
+	for f := m.ptr.storage; f != nil; f = f.next {
+		numStorage++
+	}
+	m.Storage = make([]Storage, 0, numStorage)
+	for f := m.ptr.storage; f != nil; f = f.next {
+		m.Storage = append(m.Storage, Storage{
+			Id:                 (uint32)(f.id),
+			StorageType:        (uint16)(f.StorageType),
+			FilesystemType:     (uint16)(f.FilesystemType),
+			AccessCapability:   (uint16)(f.FreeSpaceInBytes),
+			MaxCapacity:        (uint64)(f.MaxCapacity),
+			FreeSpaceInBytes:   (uint64)(f.FreeSpaceInBytes),
+			FreeSpaceInObjects: (uint64)(f.next.FreeSpaceInObjects),
+			StorageDescription: C.GoString(f.StorageDescription),
+			VolumeIdentifier:   C.GoString(f.VolumeIdentifier),
+		})
+	}
+
 	return nil
 }
 
