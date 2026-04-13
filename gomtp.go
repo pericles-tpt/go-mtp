@@ -13,8 +13,39 @@ import (
 
 type RawDevice C.LIBMTP_raw_device_t
 
-// TODO: Make go type for this
-type MTPDevice C.LIBMTP_mtpdevice_t
+type MTPDevice struct {
+	ptr *C.LIBMTP_mtpdevice_t
+
+	ObjectBitSize uint8
+	Storage       []Storage
+
+	MaximumBatteryLevel    uint8
+	DefaultMusicFolder     uint32
+	DefaultPlaylistFolder  uint32
+	DefaultPictureFolder   uint32
+	DefaultVideoFolder     uint32
+	DefaultOrganizerFolder uint32
+	DefaultZencastFolder   uint32
+	DefaultAlbumFolder     uint32
+	DefaultTextFolder      uint32
+
+	Cached int
+
+	// TODO: (maybe) params, usbinfo, errorstack, cd, extensions
+	// SOURCE: https://github.com/libmtp/libmtp/blob/41786891edcb4b57cf22f2721b164e1416d1feb5/src/libmtp.h.in#L635
+}
+
+type Storage struct {
+	Id                 uint32
+	StorageType        uint16
+	FilesystemType     uint16
+	AccessCapability   uint16
+	MaxCapacity        uint64
+	FreeSpaceInBytes   uint64
+	FreeSpaceInObjects uint64
+	StorageDescription string
+	VolumeIdentifier   string
+}
 
 type File struct {
 	ItemId    uint32
@@ -66,19 +97,61 @@ func GetRawDevices() ([]*RawDevice, error) {
 //
 // NOTE: It's the callers responsibility to ensure `ReleaseDevice` is called for each `OpenRawDevice`
 func OpenRawDevice(d *RawDevice) *MTPDevice {
-	mtpDevice := C.LIBMTP_Open_Raw_Device_Uncached((*C.LIBMTP_raw_device_t)(d))
-	return (*MTPDevice)(mtpDevice)
+	libmtpDevice := C.LIBMTP_Open_Raw_Device_Uncached((*C.LIBMTP_raw_device_t)(d))
+	mtpDevice := libmtpToGoMTPDeviceStruct(libmtpDevice)
+	return &mtpDevice
+}
+
+func libmtpToGoMTPDeviceStruct(m *C.LIBMTP_mtpdevice_t) MTPDevice {
+	dev := MTPDevice{
+		ptr: m,
+
+		ObjectBitSize: (uint8)(m.object_bitsize),
+
+		MaximumBatteryLevel:    (uint8)(m.maximum_battery_level),
+		DefaultMusicFolder:     (uint32)(m.default_music_folder),
+		DefaultPlaylistFolder:  (uint32)(m.default_playlist_folder),
+		DefaultPictureFolder:   (uint32)(m.default_picture_folder),
+		DefaultVideoFolder:     (uint32)(m.default_video_folder),
+		DefaultOrganizerFolder: (uint32)(m.default_organizer_folder),
+		DefaultZencastFolder:   (uint32)(m.default_zencast_folder),
+		DefaultAlbumFolder:     (uint32)(m.default_album_folder),
+		DefaultTextFolder:      (uint32)(m.default_text_folder),
+
+		Cached: (int)(m.cached),
+	}
+
+	var numStorage int
+	for f := m.storage; f != nil; f = f.next {
+		numStorage++
+	}
+	dev.Storage = make([]Storage, 0, numStorage)
+	for f := m.storage; f != nil; f = f.next {
+		dev.Storage = append(dev.Storage, Storage{
+			Id:                 (uint32)(f.id),
+			StorageType:        (uint16)(f.StorageType),
+			FilesystemType:     (uint16)(f.FilesystemType),
+			AccessCapability:   (uint16)(f.FreeSpaceInBytes),
+			MaxCapacity:        (uint64)(f.MaxCapacity),
+			FreeSpaceInBytes:   (uint64)(f.FreeSpaceInBytes),
+			FreeSpaceInObjects: (uint64)(f.next.FreeSpaceInObjects),
+			StorageDescription: C.GoString(f.StorageDescription),
+			VolumeIdentifier:   C.GoString(f.VolumeIdentifier),
+		})
+	}
+
+	return dev
 }
 
 // ReleaseDevice, releases an opened mtp device
-func ReleaseDevice(m *MTPDevice) {
-	C.LIBMTP_Release_Device((*C.LIBMTP_mtpdevice_t)(m))
+func (m *MTPDevice) ReleaseDevice() {
+	C.LIBMTP_Release_Device(m.ptr)
 }
 
 // GetStorage, updates the storage id's on a device, creates a linked list of them and puts the head into `MTPDevice`
-func (md *MTPDevice) GetStorage() error {
+func (m *MTPDevice) GetStorage() error {
 	// TODO: Last param is to specify sorting, maybe make it configurable in future?
-	errNo := C.LIBMTP_Get_Storage((*C.LIBMTP_mtpdevice_t)(md), 0)
+	errNo := C.LIBMTP_Get_Storage((*C.LIBMTP_mtpdevice_t)(m.ptr), 0)
 	if errNo != 0 {
 		return fmt.Errorf("failed got error code: %d", errNo)
 	}
@@ -88,27 +161,27 @@ func (md *MTPDevice) GetStorage() error {
 // SECTION: Get device information
 
 func (m *MTPDevice) GetSerialNumber() string {
-	s := C.LIBMTP_Get_Serialnumber((*C.LIBMTP_mtpdevice_t)(m))
+	s := C.LIBMTP_Get_Serialnumber((*C.LIBMTP_mtpdevice_t)(m.ptr))
 	return C.GoString(s)
 }
 
 func (m *MTPDevice) GetManufacturerName() string {
-	s := C.LIBMTP_Get_Manufacturername((*C.LIBMTP_mtpdevice_t)(m))
+	s := C.LIBMTP_Get_Manufacturername((*C.LIBMTP_mtpdevice_t)(m.ptr))
 	return C.GoString(s)
 }
 
 func (m *MTPDevice) GetModelName() string {
-	s := C.LIBMTP_Get_Modelname((*C.LIBMTP_mtpdevice_t)(m))
+	s := C.LIBMTP_Get_Modelname((*C.LIBMTP_mtpdevice_t)(m.ptr))
 	return C.GoString(s)
 }
 
 func (m *MTPDevice) GetDeviceVersion() string {
-	s := C.LIBMTP_Get_Deviceversion((*C.LIBMTP_mtpdevice_t)(m))
+	s := C.LIBMTP_Get_Deviceversion((*C.LIBMTP_mtpdevice_t)(m.ptr))
 	return C.GoString(s)
 }
 
 func (m *MTPDevice) GetFriendlyName() string {
-	s := C.LIBMTP_Get_Friendlyname((*C.LIBMTP_mtpdevice_t)(m))
+	s := C.LIBMTP_Get_Friendlyname((*C.LIBMTP_mtpdevice_t)(m.ptr))
 	return C.GoString(s)
 }
 
@@ -118,7 +191,7 @@ func (m *MTPDevice) GetBatteryLevel() (uint8, uint8, error) {
 		max  = C.uint8_t(0)
 		curr = C.uint8_t(0)
 	)
-	errNo := C.LIBMTP_Get_Batterylevel((*C.LIBMTP_mtpdevice_t)(m), &max, &curr)
+	errNo := C.LIBMTP_Get_Batterylevel((*C.LIBMTP_mtpdevice_t)(m.ptr), &max, &curr)
 	if errNo != 0 {
 		return 0, 0, fmt.Errorf("failed got error code: %d, battery level likely unsupported", errNo)
 	}
@@ -127,23 +200,23 @@ func (m *MTPDevice) GetBatteryLevel() (uint8, uint8, error) {
 
 // CheckCapability, checks if the device is capable of a `DeviceCapability`
 func (m *MTPDevice) CheckCapability(cap DeviceCapability) bool {
-	status := C.LIBMTP_Check_Capability((*C.LIBMTP_mtpdevice_t)(m), (C.LIBMTP_devicecap_t)(cap))
+	status := C.LIBMTP_Check_Capability((*C.LIBMTP_mtpdevice_t)(m.ptr), (C.LIBMTP_devicecap_t)(cap))
 	return status != 0
 }
 
 // SECTION: File and folder access
 
 // GetFilesAndFolders, gets a list of files and folders from `storage` and `parent` (folder) ids
-func (md *MTPDevice) GetFilesAndFolders(storage, parent uint32) ([]File, []File, error) {
+func (m *MTPDevice) GetFilesAndFolders(storage, parent uint32) ([]File, []File, error) {
 	var (
 		files   = []File{}
 		folders = []File{}
 	)
-	if md == nil {
+	if m == nil {
 		return files, folders, errors.New("nil device provided")
 	}
 
-	fl := C.LIBMTP_Get_Files_And_Folders((*C.LIBMTP_mtpdevice_t)(md), C.uint32_t(storage), C.uint32_t(parent))
+	fl := C.LIBMTP_Get_Files_And_Folders((*C.LIBMTP_mtpdevice_t)(m.ptr), C.uint32_t(storage), C.uint32_t(parent))
 	if fl == nil {
 		return files, folders, errors.New("no files or folders found")
 	}
@@ -181,7 +254,7 @@ func (m *MTPDevice) GetFileToFile(id uint32, path string) error {
 	// - "data" (user-defined pointer to pass data to the progress updated)
 	// SOURCE: https://github.com/libmtp/libmtp/blob/41786891edcb4b57cf22f2721b164e1416d1feb5/src/libmtp.c#L5331
 	cPath := C.CString(path)
-	errNo := C.LIBMTP_Get_File_To_File((*C.LIBMTP_mtpdevice_t)(m), C.uint32_t(id), cPath, nil, nil)
+	errNo := C.LIBMTP_Get_File_To_File((*C.LIBMTP_mtpdevice_t)(m.ptr), C.uint32_t(id), cPath, nil, nil)
 	C.free(unsafe.Pointer(cPath))
 	if errNo != 0 {
 		return fmt.Errorf("failed got error code: %d", errNo)
