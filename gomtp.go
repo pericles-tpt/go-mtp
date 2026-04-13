@@ -134,25 +134,30 @@ func (m *MTPDevice) CheckCapability(cap DeviceCapability) bool {
 // SECTION: File and folder access
 
 // GetFilesAndFolders, gets a list of files and folders from `storage` and `parent` (folder) ids
-func (md *MTPDevice) GetFilesAndFolders(storage, parent uint32) ([]File, error) {
+func (md *MTPDevice) GetFilesAndFolders(storage, parent uint32) ([]File, []File, error) {
 	var (
-		ret = []File{}
+		files   = []File{}
+		folders = []File{}
 	)
 	if md == nil {
-		return ret, errors.New("nil device provided")
+		return files, folders, errors.New("nil device provided")
 	}
 
 	fl := C.LIBMTP_Get_Files_And_Folders((*C.LIBMTP_mtpdevice_t)(md), C.uint32_t(storage), C.uint32_t(parent))
 	if fl == nil {
-		return ret, errors.New("no files or folders found")
+		return files, folders, errors.New("no files or folders found")
 	}
 
 	for p := fl; p != nil; p = p.next {
 		gf := libmtpToGoFileStruct(p)
-		ret = append(ret, gf)
+		if p.filetype == C.LIBMTP_FILETYPE_FOLDER {
+			folders = append(folders, gf)
+		} else {
+			files = append(files, gf)
+		}
 		C.LIBMTP_destroy_file_t(p)
 	}
-	return ret, nil
+	return files, folders, nil
 }
 
 func libmtpToGoFileStruct(libmtpFile *C.LIBMTP_file_t) File {
