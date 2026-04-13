@@ -74,7 +74,7 @@ func ReleaseDevice(m *MTPDevice) {
 }
 
 // GetStorage, updates the storage id's on a device, creates a linked list of them and puts the head into `MTPDevice`
-func GetStorage(md *MTPDevice) error {
+func (md *MTPDevice) GetStorage() error {
 	// TODO: Last param is to specify sorting, maybe make it configurable in future?
 	errNo := C.LIBMTP_Get_Storage((*C.LIBMTP_mtpdevice_t)(md), 0)
 	if errNo != 0 {
