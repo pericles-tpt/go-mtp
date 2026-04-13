@@ -150,7 +150,7 @@ func (m *MTPDevice) GetStorage() error {
 			AccessCapability:   (uint16)(f.FreeSpaceInBytes),
 			MaxCapacity:        (uint64)(f.MaxCapacity),
 			FreeSpaceInBytes:   (uint64)(f.FreeSpaceInBytes),
-			FreeSpaceInObjects: (uint64)(f.next.FreeSpaceInObjects),
+			FreeSpaceInObjects: (uint64)(f.FreeSpaceInObjects),
 			StorageDescription: C.GoString(f.StorageDescription),
 			VolumeIdentifier:   C.GoString(f.VolumeIdentifier),
 		})
