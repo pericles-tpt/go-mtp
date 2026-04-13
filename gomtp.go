@@ -12,6 +12,8 @@ import (
 )
 
 type RawDevice C.LIBMTP_raw_device_t
+
+// TODO: Make go type for this
 type MTPDevice C.LIBMTP_mtpdevice_t
 
 type File struct {
