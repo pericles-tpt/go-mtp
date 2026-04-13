@@ -132,7 +132,7 @@ func (m *MTPDevice) CheckCapability(cap DeviceCapability) bool {
 // SECTION: File and folder access
 
 // GetFilesAndFolders, gets a list of files and folders from `storage` and `parent` (folder) ids
-func GetFilesAndFolders(md *MTPDevice, storage, parent uint32) ([]File, error) {
+func (md *MTPDevice) GetFilesAndFolders(storage, parent uint32) ([]File, error) {
 	var (
 		ret = []File{}
 	)
