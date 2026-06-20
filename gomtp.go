@@ -98,6 +98,9 @@ func GetRawDevices() ([]*RawDevice, error) {
 // NOTE: It's the callers responsibility to ensure `ReleaseDevice` is called for each `OpenRawDevice`
 func OpenRawDevice(d *RawDevice) *MTPDevice {
 	libmtpDevice := C.LIBMTP_Open_Raw_Device_Uncached((*C.LIBMTP_raw_device_t)(d))
+	if libmtpDevice == nil {
+		return nil
+	}
 	mtpDevice := libmtpToGoMTPDeviceStruct(libmtpDevice)
 	return &mtpDevice
 }
