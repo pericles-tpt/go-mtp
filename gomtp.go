@@ -220,19 +220,21 @@ func (m *MTPDevice) GetFilesAndFolders(storage, parent uint32) ([]File, []File, 
 		return files, folders, errors.New("nil device provided")
 	}
 
-	fl := C.LIBMTP_Get_Files_And_Folders((*C.LIBMTP_mtpdevice_t)(m.ptr), C.uint32_t(storage), C.uint32_t(parent))
-	if fl == nil {
+	p := C.LIBMTP_Get_Files_And_Folders((*C.LIBMTP_mtpdevice_t)(m.ptr), C.uint32_t(storage), C.uint32_t(parent))
+	if p == nil {
 		return files, folders, errors.New("no files or folders found")
 	}
 
-	for p := fl; p != nil; p = p.next {
+	for p != nil {
 		gf := libmtpToGoFileStruct(p)
 		if p.filetype == C.LIBMTP_FILETYPE_FOLDER {
 			folders = append(folders, gf)
 		} else {
 			files = append(files, gf)
 		}
-		C.LIBMTP_destroy_file_t(p)
+		prev := p
+		p = p.next
+		C.LIBMTP_destroy_file_t(prev)
 	}
 	return files, folders, nil
 }
